@@ -1,51 +1,6 @@
 let isCompact;
 let firstTime = true;
 (() => {
-  // Save a reference to the original fetch function
-  const fetch = (window._fetch = window._fetch || window.fetch);
-  window.fetch = (...t) => {
-    // If the request is not for the chat backend API or moderations, just use the original fetch function
-    if (
-      !(
-        t[0].includes("https://chat.openai.com/backend-api/conversation") ||
-        t[0].includes("https://chat.openai.com/backend-api/moderations")
-      )
-    )
-      return fetch(...t);
-
-    try {
-      // Get the options object for the request, which includes the request body
-      const options = t[1];
-      // Parse the request body from JSON
-      const body = JSON.parse(options.body);
-      if (
-        body.hasOwnProperty("conversation_id") &&
-        !document.querySelector("#conversationID")
-      ) {
-        // rather than deal with message passing, we use a DOM element which the content scripts can access
-        let conversationID = body["conversation_id"];
-        document.body
-          .appendChild(document.createElement(`input`))
-          .setAttribute("id", "conversationID");
-        document
-          .querySelector("#conversationID")
-          .setAttribute("type", "hidden");
-        document.querySelector("#conversationID").style.display = "none";
-        document.querySelector("#conversationID").value = conversationID;
-        return fetch(...t);
-      }
-
-      // If no prompt template has been selected, use the original fetch function
-      else {
-        return fetch(...t);
-      }
-    } catch {
-      // If there was an error parsing the request body or modifying the request,
-      // just use the original fetch function
-      return fetch(...t);
-    }
-  };
-
   // Create a new observer for the chat sidebar to watch for changes to the document body
   const observer = new MutationObserver((mutations) => {
     // For each mutation (change) to the document body
@@ -88,20 +43,14 @@ let firstTime = true;
             // Insert the "Prompt Templates" section into the chat interfac
             insertPromptTemplatesSection()
         }) */
-  function loadUserPrompts() {
-    let promptsRawString = document.querySelector("#prompts_storage").value;
-    isCompact = document.querySelector("#isCompact")?.value === "true" ?? false;
-    //console.log(typeof isCompact)
-    //console.log(isCompact)
-    if (promptsRawString) {
-      // if no prompts, do nothing
-      let prompts = JSON.parse(promptsRawString);
-      window.prompttemplates = prompts.reverse();
-      insertPromptTemplatesSection();
-      document.querySelector("#prompts_storage").remove();
-    }
+  async function loadUserPrompts() {
+    const prompts = await getFromStorage("prompts", [])
+    isCompact = await getFromStorage("isCompact", false)
+    window.prompttemplates = prompts.reverse();
+    insertPromptTemplatesSection();
   }
-  setTimeout(loadUserPrompts, 500); // delay to make sure insertPromptTemplates works right
+
+  loadUserPrompts()
 
   document.head.insertAdjacentHTML(
     "beforeend",
@@ -290,7 +239,11 @@ let globalTags = [];
 // This function inserts a section containing a list of prompt templates into the chat interface
 async function insertPromptTemplatesSection(templates = window.prompttemplates, category = "", searchTerm = "") {
   // Get the title element (as a reference point and also for some alteration)
-  document.querySelector("textarea").parentElement.parentElement.firstChild.remove() // remove the annoying built-in prompts
+  const openAIPrompts = document.querySelector("textarea").parentElement.parentElement.querySelector("div") // remove the annoying built-in prompts
+  if (openAIPrompts && !openAIPrompts.querySelector("#prompt-textarea")){
+    openAIPrompts.remove()
+  }
+
 
   const title = document.querySelector("h1.text-4xl");
 
@@ -357,9 +310,9 @@ async function insertPromptTemplatesSection(templates = window.prompttemplates, 
   // Create the HTML for the prompt templates section
   const html = `
     <div class="${css`column`}">
-    ${svg`ChatBubble`}
+    ${promptSvg`ChatBubble`}
     <div>
-    <h2 class="${css`h2`}" style="margin-bottom: 5px"><span data-i18n="templates_title">ChatGPT Prompt Genius Templates</span> - <a href="https://link.aipromptgenius.app/new" target="_blank"><u data-i18n="what_new">What's New?</u> ${svg(
+    <h2 class="${css`h2`}" style="margin-bottom: 5px"><span data-i18n="templates_title">ChatGPT Prompt Genius Templates</span> - <a href="https://link.aipromptgenius.app/new" target="_blank"><u data-i18n="what_new">What's New?</u> ${promptSvg(
       "Arrow",
     )}</a></h2> 
     <div class="${css`paginationText`}" id="cgpt-pg-ad"></div>
@@ -392,7 +345,7 @@ async function insertPromptTemplatesSection(templates = window.prompttemplates, 
                 <input id="search" type="text" class="${css`search`}" autocomplete="off" data-i18n-placeholder="search_prompts" placeholder="Search Prompts...">
         </div>
     </div>
-    <div><span data-i18n="compact">Compact view</span> <input id="compact" type="checkbox"> | <a target="_blank" href="https://www.reddit.com/r/ChatGPTPromptGenius/"><span data-i18n="discover">Discover Prompts</span> ${svg`Arrow`}</a> | <a style="cursor: pointer" target="blank" id="userPrompts"><span data-i18n="my_prompts">My Prompts</span> ${svg`Arrow`}</a>
+    <div><span data-i18n="compact">Compact view</span> <input id="compact" type="checkbox"> | <a target="_blank" href="https://www.reddit.com/r/ChatGPTPromptGenius/"><span data-i18n="discover">Discover Prompts</span> ${promptSvg`Arrow`}</a> | <a style="cursor: pointer" target="blank" id="userPrompts"><span data-i18n="my_prompts">My Prompts</span> ${promptSvg`Arrow`}</a>
     </div>
     
     <ul class="${css`ul`}" id="templates">
@@ -458,6 +411,8 @@ async function insertPromptTemplatesSection(templates = window.prompttemplates, 
   if (focusSearch === true) {
     search.focus();
   }
+
+  addUserPromptListener()
 
   catSelect.addEventListener("change", () => searchAndCat(false));
 
@@ -686,16 +641,15 @@ function replaceVariables(str, values) {
 async function getVarsFromModal(varArray, promptText) {
   const t = promptTranslations;
   const template = `  
-        <div id="var-modal" style="z-index: 100; background-color: rgb(0 0 0/.5)" class="fixed items-center inset-0 flex items-center justify-center bg-opacity-50 z-100">
-          <div class="fixed inset-0 z-10 overflow-y-auto">
-            <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block">
-              <div class="hidden sm:inline-block sm:h-screen sm:align-middle" aria-hidden="true"></div>
-              <div style="width: 50%" class="dark:bg-gray-900 dark:text-gray-200 dark:border-netural-400 inline-block max-h-[ma400px] transform overflow-hidden rounded-lg border border-gray-300 bg-white px-4 pt-5 pb-4 text-left align-bottom shadow-xl transition-all dark:bg-[#202123] sm:my-8 sm:max-h-[600px] sm:w-full sm:p-6 sm:align-middle" role="dialog">
+        <div id="var-modal" style="z-index: 100; background-color: rgb(0 0 0/.5)" class="fixed pg-outer items-center inset-0 flex items-center justify-center bg-opacity-50 z-100">
+          <div class="fixed inset-0 z-10 overflow-y-auto pg-outer">
+            <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block pg-outer">
+              <div style="width: 60%" class="dark:bg-gray-900 dark:text-gray-200 dark:border-netural-400 inline-block max-h-[ma400px] transform overflow-hidden rounded-lg border border-gray-300 bg-white px-4 pt-5 pb-4 text-left align-bottom shadow-xl transition-all dark:bg-[#202123] sm:my-8 sm:max-h-[600px] sm:w-full sm:p-6 sm:align-middle" role="dialog">
                 ${varArray
                   .map(
                     (variable) => `
                 <div class="text-sm font-bold text-black dark:text-gray-200">${variable}</div>
-                <textarea style="border-color: #8e8ea0" class="pg-variable my-2 w-full rounded-lg border border-neutral-500 px-4 py-2 text-neutral-900 shadow focus:outline-none dark:border-neutral-800 dark:border-opacity-50 dark:bg-gray-800 dark:text-neutral-100" placeholder="${tr(
+                <textarea style="border-color: #8e8ea0; height: 45px" class="pg-variable my-2 w-full rounded-lg border border-neutral-500 px-4 py-2 text-neutral-900 shadow focus:outline-none dark:border-neutral-800 dark:border-opacity-50 dark:bg-gray-800 dark:text-neutral-100" placeholder="${tr(
                   "enter_val",
                   t,
                 )} ${variable}..." value=""></textarea>
@@ -722,6 +676,21 @@ async function getVarsFromModal(varArray, promptText) {
       document.removeEventListener("keydown", handleKeyDown);
     }
   }
+
+  function handleClick(e){
+    if (e.target.classList.contains("pg-outer")){
+      closeModal()
+    }
+  }
+
+  function closeModal(){
+    const modal = document.getElementById("var-modal")
+    if (modal) modal.remove()
+  }
+
+  document.querySelectorAll(".pg-outer").forEach(div => {
+    div.addEventListener("click", (e) => handleClick(e))
+  })
 
   document.addEventListener("keydown", handleKeyDown);
   document.getElementById("save-vars").addEventListener("click", submitModal);
@@ -801,7 +770,7 @@ function CSVToArray(strData, strDelimiter) {
   return data;
 }
 
-function svg(name) {
+function promptSvg(name) {
   name = Array.isArray(name) ? name[0] : name;
   switch (name) {
     case "Archive":
@@ -853,18 +822,52 @@ function css(name) {
   }
 }
 
-let prompts_url = window.location.href;
+function openPrompts() {
+  chrome.runtime.sendMessage({ type: "openPrompts" });
+}
 
-function check_url() {
-  if (prompts_url !== window.location.href) {
-    prompts_url = window.location.href;
+function saveCompact() {
+  let isCompact = document.getElementById("compact").checked;
+  //console.log(isCompact)
+  chrome.storage.local.set({ isCompact: isCompact });
+}
+
+function addUserPromptListener() {
+  document.getElementById("userPrompts").addEventListener("click", openPrompts);
+  document.getElementById("compact").addEventListener("click", saveCompact);
+}
+
+function promptUrlChange(){
+  setTimeout(insertPromptTemplatesSection, 300);
+  let newChatButton = document.querySelector("nav").firstChild;
+  newChatButton.addEventListener("click", () => {
     setTimeout(insertPromptTemplatesSection, 300);
-    let newChatButton = document.querySelector("nav").firstChild;
-    newChatButton.addEventListener("click", () => {
+  });
+}
+document.body.addEventListener("locationchange", promptUrlChange)
+
+// Function to handle the keydown event
+function handleKeyDown(event) { // new chat keyboard shortcut
+  // Check if the event's key is 'O' and the appropriate modifier keys are pressed
+  if ((event.key === 'O' || event.key === 'o') &&
+      (event.metaKey || event.ctrlKey) &&
+      (event.shiftKey)) {
       setTimeout(insertPromptTemplatesSection, 300);
-    });
-    //console.log("URL CHANGE")
   }
 }
 
-setInterval(check_url, 1000);
+chrome.storage.local.get({ settings: {} }, function (result) {
+  let dontInject = result.settings?.dont_inject_prompts ?? false;
+  let isPlus = result.settings?.is_plus ?? false;
+  //console.log("DONT INJECT " + dontInject)
+  if (!dontInject) {
+    bigWrapper();
+  }
+  let plusVal = JSON.stringify(isPlus);
+  document.body.appendChild(document.createElement(`input`)).setAttribute("id", "plusManual");
+  document.querySelector("#plusManual").setAttribute("type", "hidden");
+  document.querySelector("#plusManual").value = plusVal;
+});
+
+// Add a keydown event listener to the document
+document.addEventListener('keydown', handleKeyDown);

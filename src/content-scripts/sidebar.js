@@ -81,7 +81,9 @@ async function main() {
   let nav = document.querySelector("#__next").querySelector("div").querySelector("div");
   let chatInput = document.querySelector("#prompt-textarea");
   let mainPar = document.querySelector("main").parentElement;
-  nav.insertAdjacentHTML("beforebegin", promptBar);
+  if (!document.querySelector("#prompt-bar")) {
+    nav.insertAdjacentHTML("beforebegin", promptBar);
+  }
   mainPar.style.marginRight = "260px";
 
   chrome.storage.local.get({ hidePromptBar: false }, function (result) {
@@ -253,6 +255,26 @@ async function main() {
       let promptID = t.dataset.promptId3;
       deletePrompt(promptID, t.parentElement.parentElement);
     });
+  }
+
+  function togglePrompt() {
+    let mainP = document.querySelector("main").parentElement;
+    const myNav = document.getElementById("prompt-bar");
+    const hidden = myNav.classList.contains("hidden");
+    const closePrompt = document.getElementById("closePrompt");
+    if (hidden) {
+      chrome.storage.local.set({ hidePromptBar: false });
+      myNav.classList.remove("hidden");
+      closePrompt.style.right = "259px";
+      closePrompt.innerHTML = ">";
+      mainP.style.marginRight = "260px";
+    } else {
+      chrome.storage.local.set({ hidePromptBar: true });
+      myNav.classList.add("hidden");
+      closePrompt.style.right = "0";
+      closePrompt.innerHTML = "<";
+      mainP.style.marginRight = "0";
+    }
   }
 
   async function editPrompt(id) {
@@ -464,6 +486,7 @@ async function main() {
     return template;
   }
 
+  //hotkey
   let textDiv = chatInput.parentElement;
   let autocomplete = false;
   let focusedIdx = 0;
@@ -566,7 +589,6 @@ async function main() {
     autocomplete = false;
   }
 
-  let lastKey = "";
   function autoComplete(event) {
     //console.log(lastKey)
     //console.log(event)
@@ -778,26 +800,6 @@ async function main() {
     );
   }
 
-  function togglePrompt() {
-    let mainP = document.querySelector("main").parentElement;
-    const myNav = document.getElementById("prompt-bar");
-    const hidden = myNav.classList.contains("hidden");
-    const closePrompt = document.getElementById("closePrompt");
-    if (hidden) {
-      chrome.storage.local.set({ hidePromptBar: false });
-      myNav.classList.remove("hidden");
-      closePrompt.style.right = "259px";
-      closePrompt.innerHTML = ">";
-      mainP.style.marginRight = "260px";
-    } else {
-      chrome.storage.local.set({ hidePromptBar: true });
-      myNav.classList.add("hidden");
-      closePrompt.style.right = "0";
-      closePrompt.innerHTML = "<";
-      mainP.style.marginRight = "0";
-    }
-  }
-
   function chatInputEvents() {
     document.addEventListener("keyup", autoComplete, { capture: true });
     document.addEventListener("keydown", preventEnter, { capture: true });
@@ -805,9 +807,7 @@ async function main() {
   }
   chatInputEvents();
 
-  document
-    .getElementById("closePrompt")
-    .addEventListener("click", togglePrompt);
+  document.getElementById("closePrompt").addEventListener("click", togglePrompt);
   document.getElementById("newPromptPg").addEventListener("click", newBlank);
 
   chrome.runtime.onMessage.addListener(
@@ -817,11 +817,10 @@ async function main() {
       }
     },
   );
+
   function removeFakeDiv() {
     // convenient to place here - this prevents some themes from breaking
-    const annoyingDiv = document.querySelector(
-      ".absolute.z-10.hidden.flex-col.gap-2.right-3.top-3",
-    );
+    const annoyingDiv = document.querySelector(".absolute.z-10.hidden.flex-col.gap-2.right-3.top-3");
     if (annoyingDiv) {
       annoyingDiv.remove();
     }
@@ -842,26 +841,37 @@ function svg(name) {
       return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tabler-icon tabler-icon-plus"> <path d="M12 5l0 14"></path> <path d="M5 12l14 0"></path> </svg>`;
   }
 }
+let lastKey = "";
 
 let sidebarURL = window.location.href;
+let sidebar = document.getElementById("prompt-bar");
+let closePrompt = document.getElementById("closePrompt");
+let promptBar = document.getElementById("prompt-bar")
+let suggestions = document.getElementById("suggestions");
 
-function check_url() {
-  if (sidebarURL !== window.location.href) {
-    //console.log("sidebar URL")
-    sidebarURL = window.location.href;
-    let sidebar = document.getElementById("prompt-bar");
-    let closeNav = document.getElementById("closeNav");
-    let closePrompt = document.getElementById("closePrompt");
-    let suggestions = document.getElementById("suggestions");
-    function remove() {
-      if (closePrompt) closePrompt.remove();
-      if (closeNav) closeNav.remove();
-      if (sidebar) sidebar.remove();
-      if (suggestions) suggestions.remove();
-    }
-    setTimeout(remove, 300);
-    main();
-  }
+function remove() {
+  if (closePrompt) closePrompt.remove();
+  if (sidebar) sidebar.remove();
+  if (suggestions) suggestions.remove();
+  if (promptBar) promptBar.remove()
 }
 
-setInterval(check_url, 1000);
+function sidebarUrlChange(){
+  setTimeout(remove, 300);
+  main();
+}
+
+document.body.addEventListener("locationchange", sidebarUrlChange)
+
+// Function to handle the keydown event
+function handleKeyDown(event) { // new chat keyboard shortcut
+  // Check if the event's key is 'O' and the appropriate modifier keys are pressed
+  if ((event.key === 'O' || event.key === 'o') &&
+      (event.metaKey || event.ctrlKey) &&
+      (event.shiftKey)) {
+      remove()
+      lastkey = "Space"
+      setTimeout(main, 300);
+  }
+}
+document.addEventListener('keydown', handleKeyDown);

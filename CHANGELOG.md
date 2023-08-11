@@ -1,9 +1,16 @@
-### 3.1.8 - August 10, 2023
+### 3.1.9 - August 10, 2023
+
+- Fix issue where chat box was removed
+- Add support for cmd+shift+o
+
+### 3.1.8 - August 10, 2023 
+
+(not published on Chrome due to causing break)
 
 - Fix styling (cards, search/category, variable modal)
 - Fix "Use This prompt button"
 - Remove new suggested prompts from input
-- 
+
 
 ### 3.1.7 - August 8, 2023
 
